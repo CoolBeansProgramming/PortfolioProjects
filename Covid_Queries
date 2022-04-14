@@ -1,0 +1,166 @@
+/* data we will use */
+SELECT locations, Dates, totalcases, newcases, totaldeaths, population
+FROM coviddeaths 
+ORDER BY locations, dates; 
+
+/* total cases vs total deaths */
+/* likelihood of dying if you get covid in your country */
+SELECT locations, Dates, totalcases, totaldeaths, cast(totaldeaths as numeric)/totalcases * 100 as DeathPercentage 
+FROM coviddeaths 
+WHERE locations like '%States'
+ORDER BY locations, dates; 
+
+/* total cases vs population */
+/* percentage of population got covid */ 
+SELECT locations, Dates, population, totalcases, cast(totalcases as numeric)/population * 100 as PercentPopInfected 
+FROM coviddeaths 
+WHERE locations like '%States'
+ORDER BY locations, dates; 
+
+/* countries with highest infection rate */
+SELECT locations, population, max(totalcases) as HighestInfectionCount, max(cast(totalcases as numeric)/population) * 100 as PercentPopInfected 
+FROM coviddeaths 
+WHERE continent IS NOT NULL 
+GROUP BY locations, population
+ORDER BY PercentPopInfected DESC;
+
+/* countries with the highest death count per population */
+SELECT locations, MAX(cast(totaldeaths as numeric)) AS totaldeathcount
+FROM coviddeaths
+WHERE totaldeaths IS NOT NULL 
+GROUP BY locations
+ORDER BY totaldeathcount DESC; 
+
+/* locations with the highest death count per population */
+-- good to put into view 
+SELECT locations, MAX(cast(totaldeaths as numeric)) AS totaldeathcount
+FROM coviddeaths
+WHERE continent IS NULL AND locations NOT LIKE '%income%'
+GROUP BY locations
+ORDER BY totaldeathcount DESC; 
+
+/* continents with the highest death count per population */
+SELECT continent, MAX(cast(totaldeaths as numeric)) AS totaldeathcount
+FROM coviddeaths
+WHERE totaldeaths IS NOT NULL AND continent IS NOT NULL
+GROUP BY continent
+ORDER BY totaldeathcount DESC; 
+
+-- Global Numbers
+SELECT dates, sum(newcases) as totalCases, SUM(newdeaths) as TotalDeaths, SUM(cast(newdeaths as numeric))/SUM(newcases)*100 AS deathPercentage
+FROM coviddeaths
+WHERE continent IS NOT NULL
+GROUP BY dates
+order by 1,2;
+
+SELECT sum(newcases) as totalCases, SUM(newdeaths) as TotalDeaths, SUM(cast(newdeaths as numeric))/SUM(newcases)*100 AS deathPercentage
+FROM coviddeaths
+WHERE continent IS NOT NULL
+order by 1,2;
+
+--COVID VACCINATION TABLE
+
+-- total population vs vaccinations 
+SELECT dea.continent, dea.locations, dea.dates, dea.population, vac.newvac
+, SUM(vac.newvac) OVER (Partition by dea.locations order by dea.locations, dea.dates) as RollingPeopleVac
+FROM coviddeaths as dea
+JOIN covidvaccinations vac
+ON dea.locations = vac.locations 
+AND dea.dates = vac.dates
+WHERE dea.continent IS NOT NULL
+ORDER BY 2,3;
+
+-- Using CTE to perform Calculation on Partition By in previous query
+
+With PopvsVac (Continent, Locations, Dates, Population, newvac, RollingPeopleVaccinated)
+as
+(
+Select dea.continent, dea.locations, dea.dates, dea.population, vac.newvac
+, SUM(vac.newvac) OVER (Partition by dea.Locations Order by dea.locations, dea.Dates) as RollingPeopleVaccinated
+--, (RollingPeopleVaccinated/population)*100
+From coviddeaths dea
+Join covidvaccinations vac
+	On dea.locations = vac.locations
+	and dea.dates = vac.dates
+where dea.continent is not null
+--order by 2,3
+)
+Select *, (RollingPeopleVaccinated::numeric/Population::numeric)*100 
+From PopvsVac
+
+
+
+-- Using Temp Table to perform Calculation on Partition By in previous query
+
+Create Temp Table PercentPopulationVaccinated
+(
+Continent varchar(255),
+Locations varchar(255),
+Dates date,
+Population numeric,
+newvac numeric,
+RollingPeopleVaccinated numeric
+)
+
+Insert into PercentPopulationVaccinated
+Select dea.continent, dea.locations, dea.dates, dea.population, vac.newvac
+, SUM(vac.newvac) OVER (Partition by dea.Locations Order by dea.locations, dea.Dates) as RollingPeopleVaccinated
+--, (RollingPeopleVaccinated/population)*100
+From coviddeaths dea
+Join covidvaccinations vac
+	On dea.locations = vac.locations
+	and dea.dates = vac.dates
+where dea.continent is not null;
+
+Select *, (RollingPeopleVaccinated/Population)*100 as tester 
+From PercentPopulationVaccinated
+WHERE RollingPeopleVaccinated is not null; 
+
+
+
+-- Using Temp Table to perform Calculation on Partition By in previous query
+-- But now making change in original table 
+Drop table if exists PercentPopulationVaccinated
+Create Temp Table PercentPopulationVaccinated
+(
+Continent varchar(255),
+Locations varchar(255),
+Dates date,
+Population numeric,
+newvac numeric,
+RollingPeopleVaccinated numeric
+)
+
+Insert into PercentPopulationVaccinated
+Select dea.continent, dea.locations, dea.dates, dea.population, vac.newvac
+, SUM(vac.newvac) OVER (Partition by dea.Locations Order by dea.locations, dea.Dates) as RollingPeopleVaccinated
+--, (RollingPeopleVaccinated/population)*100
+From coviddeaths dea
+Join covidvaccinations vac
+	On dea.locations = vac.locations
+	and dea.dates = vac.dates
+--where dea.continent is not null;
+
+Select *, (RollingPeopleVaccinated/Population)*100 as tester 
+From PercentPopulationVaccinated
+WHERE RollingPeopleVaccinated is not null; 
+
+
+
+-- create a view to store data for later visualizations 
+
+Create View PercentPopulationVaccinated as
+Select dea.continent, dea.locations, dea.dates, dea.population, vac.newvac
+, SUM(vac.newvac) OVER (Partition by dea.Locations Order by dea.locations, dea.Dates) as RollingPeopleVaccinated
+--, (RollingPeopleVaccinated/population)*100
+From coviddeaths dea
+Join covidvaccinations vac
+	On dea.locations = vac.locations
+	and dea.dates = vac.dates
+where dea.continent is not null
+order by 2,3;
+
+Select *
+From PercentPopulationVaccinated
+Limit 5; 
+
